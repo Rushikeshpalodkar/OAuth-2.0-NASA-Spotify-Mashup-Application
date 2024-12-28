@@ -1,0 +1,49 @@
+title NASA-Spotify Integration
+
+participant NASA API
+participant User
+participant Server
+
+participant Spotify API
+
+note over User: User initiates the process by accessing the root URL.
+User -> Server: GET /
+Server -> User: 200 OK + index.html (form to fill out)
+
+note over User: User submits the form with a date for NASA's APOD.
+User -> Server: GET /search?date=YYYY-MM-DD
+
+note over Server: Server begins handling NASA search.
+Server -> NASA API: GET /planetary/apod?api_key=API_KEY&date=YYYY-MM-DD
+NASA API -> Server: 200 OK + APOD data (title, explanation, URL)
+
+note over Server: NASA data is fetched successfully.
+
+alt Spotify Token is Cached and Valid
+note over Server: Spotify token is available in cache and valid.
+Server -> Spotify API: GET /v1/search?type=track&q=APOD_title
+Spotify API -> Server: 200 OK + track data
+end
+
+alt Spotify Token Missing or Expired
+note over Server: Spotify token is missing or expired.
+Server -> User: 302 Redirect to Spotify OAuth login page
+
+note over User: User logs in to Spotify and grants permissions.
+User -> Spotify API: GET /authorize?... (OAuth request)
+Spotify API -> User: 302 Redirect with auth code
+
+note over User: User redirected back to server with auth code.
+User -> Server: GET /callback?code=AUTH_CODE
+
+note over Server: Server exchanges auth code for token.
+Server -> Spotify API: POST /api/token {...}
+Spotify API -> Server: 200 OK + access_token
+
+note over Server: Server caches token and resumes Spotify search.
+Server -> Spotify API: GET /v1/search?type=track&q=APOD_title
+Spotify API -> Server: 200 OK + track data
+end
+
+note over Server: Server combines NASA data with Spotify tracks.
+Server -> User: 200 OK + HTML response (APOD + Spotify tracks)
