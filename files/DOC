@@ -1,0 +1,269 @@
+const http = require("http");
+const https = require("https");
+const fs = require("fs");
+const querystring = require("querystring");
+
+const port = 3000;
+const server = http.createServer();
+
+const { client_id, client_secret, redirect_uri, nasa_api_key } = require("./auth/credentials.json");
+
+server.on("request", handle_request);
+function handle_request(req, res) {
+  console.log(`New request for ${req.url}`);
+  if (req.url === "/") {
+      // Serve the home page
+      const homePage = fs.createReadStream("html/main.html");
+      res.writeHead(200, { "Content-Type": "text/html" });
+      homePage.pipe(res);
+  } else if (req.url.startsWith("/authorize")) {
+    //Spotify OAuth login page
+    const spotifyAuthUrl =
+        `https://accounts.spotify.com/authorize?` +
+        querystring.stringify({
+            client_id,
+            response_type: "code",
+            redirect_uri,
+            scope: "playlist-modify-public",
+        });
+    console.log(`Spotify Auth URL: ${spotifyAuthUrl}`);
+    res.writeHead(302, { Location: spotifyAuthUrl });
+    res.end();
+  } 
+  //Handling Spotify OAuth callback.
+  else if (req.url.startsWith("/callback")) {
+    handle_spotify_callback(req, res);
+  } 
+  //Handling NASA search
+  else if (req.url.startsWith("/search")) {
+    handle_search(req, res);
+  } 
+  // if not found give 404
+  else {
+    console.log("404 Not Found for URL:", req.url);
+    res.writeHead(404, { "Content-Type": "text/plain" });
+    res.end("404 Not Found");
+  }
+}
+
+
+// spotify callback and handel cache and write in the user-token.json
+function handle_spotify_callback(req, res) {
+  const code = new URL(req.url, `http://localhost:${port}`).searchParams.get("code");
+  if (!code) {
+    console.error("Authorization code is missing.");
+    res.writeHead(400, { "Content-Type": "text/plain" });
+    res.end("Authorization code is missing.");
+    return;
+  }
+  console.log("Received authorization code:", code);
+
+  const postData = querystring.stringify({
+    grant_type: "authorization_code",
+    code,
+    redirect_uri,
+    client_id,
+    client_secret,
+  });
+
+  const options = {
+    hostname: "accounts.spotify.com",
+    path: "/api/token",
+    method: "POST",
+    headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Content-Length": Buffer.byteLength(postData),
+    },
+  };
+
+  const tokenRequest = https.request(options, (tokenResponse) => {
+    let body = "";
+    tokenResponse.on("data", (chunk) => (body += chunk));
+    tokenResponse.on("end", () => {
+      console.log("Spotify token response received.");
+      try {
+        const tokenData = JSON.parse(body);
+        if (tokenData.error) {
+          console.error("Failed to fetch Spotify access token:", tokenData.error);
+          res.writeHead(500, { "Content-Type": "text/plain" });
+          res.end("Failed to fetch access token.");
+          return;
+        }
+        console.log("Spotify access token fetched successfully:", tokenData);
+
+        // Cache the token
+        fs.writeFileSync("./auth/user-token.json", JSON.stringify(tokenData));
+        console.log("Access token cached.");
+        res.writeHead(302, { Location: "/" }); // Redirect to home page
+        res.end();
+      } catch (err) {
+        console.error("Error parsing token response:", err);
+        res.writeHead(500, { "Content-Type": "text/plain" });
+        res.end("Error processing Spotify token.");
+      }
+    });
+  });
+
+  tokenRequest.on("error", (err) => {
+    console.error("Error fetching Spotify token:", err);
+    res.writeHead(500, { "Content-Type": "text/plain" });
+    res.end("Error fetching Spotify token.");
+  });
+
+  tokenRequest.end(postData);
+}
+
+//  Gets the NASA data and look for spotify token and search it in spotify  
+function handle_search(req, res) {
+  const date = new URL(req.url, `http://localhost:${port}`).searchParams.get("date");
+  if (!date) {
+    console.error("Date parameter is missing.");
+    res.writeHead(400, { "Content-Type": "text/plain" });
+    res.end("Date is required.");
+    return;
+  }
+  console.log("Fetching NASA data for date:", date);
+
+  // Fetch NASA data
+  fetch_nasa_data(date, res, (nasaResult) => {
+    if (!nasaResult) {
+      console.error("Failed to fetch NASA data.");
+      res.writeHead(500, { "Content-Type": "text/plain" });
+      res.end("Failed to fetch NASA data.");
+      return;
+    }
+
+    console.log("NASA data fetched successfully:", nasaResult);
+
+    // Check Spotify token
+    const tokenData = get_cached_token();
+    if (!tokenData) {
+      console.warn("Spotify token is missing or expired.");
+      res.writeHead(302, { Location: "/authorize" });
+      res.end();
+      return;
+    }
+
+    console.log("Using cached Spotify access token:", tokenData.access_token);
+
+    // Search Spotify
+    search_spotify_tracks(tokenData.access_token, nasaResult.title, res, nasaResult);
+  });
+}
+
+//Gets the data from NASA
+function fetch_nasa_data(date, res, callback) {
+  const nasaUrl = `https://api.nasa.gov/planetary/apod?api_key=${nasa_api_key}&date=${date}`;
+  console.log("Requesting NASA API:", nasaUrl);
+
+  https.get(nasaUrl, (nasaRes) => {
+    let data = "";
+    nasaRes.on("data", (chunk) => (data += chunk));
+    nasaRes.on("end", () => {
+      try {
+        const nasaResult = JSON.parse(data);
+        if (!nasaResult.title) {
+          console.error("Invalid response from NASA API:", nasaResult);
+          callback(null);
+          return;
+        }
+        callback(nasaResult);
+      } catch (err) {
+        console.error("Error parsing NASA data:", err);
+        callback(null);
+      }
+    });
+  }).on("error", (err) => {
+    console.error("Error fetching NASA data:", err);
+    callback(null);
+  });
+}
+
+// Checks the Cache and Token
+function get_cached_token() {
+  const tokenFile = "./auth/user-token.json";
+  if (!fs.existsSync(tokenFile)) {
+    console.warn("Token file does not exist.");
+    return null;
+  }
+
+  const tokenData = JSON.parse(fs.readFileSync(tokenFile));
+  if (new Date(tokenData.expiration) <= Date.now()) {
+    console.warn("Token has expired.");
+    return null;
+  }
+
+  return tokenData;
+}
+
+// Search the soticy track
+function search_spotify_tracks(accessToken, query, res, nasaResult) {
+  const searchQuery = querystring.stringify({ type: "track", q: query });
+  const options = {
+      hostname: "api.spotify.com",
+      path: `/v1/search?${searchQuery}`,
+      method: "GET",
+      headers: { Authorization: `Bearer ${accessToken}` },
+  };
+
+  const searchRequest = https.request(options, (searchResponse) => {
+      let data = "";
+      searchResponse.on("data", (chunk) => (data += chunk));
+      searchResponse.on("end", () => {
+          console.log("Raw Spotify response:", data); // Debug log
+
+          try {
+              const spotifyResult = JSON.parse(data);
+
+              if (spotifyResult.error) {
+                  console.error("Spotify API error:", spotifyResult.error.message);
+                  res.writeHead(500, { "Content-Type": "text/plain" });
+                  res.end(`Spotify API error: ${spotifyResult.error.message}`);
+                  return;
+              }
+
+              render_results(nasaResult, spotifyResult, res);
+          } catch (err) {
+              console.error("Error parsing Spotify search results:", err.message);
+              res.writeHead(500, { "Content-Type": "text/plain" });
+              res.end(`Error from Spotify API: ${data}`);
+          }
+      });
+  });
+
+  searchRequest.on("error", (err) => {
+      console.error("Error fetching Spotify tracks:", err.message);
+      res.writeHead(500, { "Content-Type": "text/plain" });
+      res.end("Error fetching Spotify tracks.");
+  });
+
+  searchRequest.end();
+}
+
+
+
+// read result and map it for final html page
+function render_results(nasaResult, spotifyResult, res) {
+  const tracks = spotifyResult.tracks.items
+    .map(
+      (track) =>
+        `<li><a href="${track.external_urls.spotify}" target="_blank">${track.name} by ${track.artists
+          .map((a) => a.name)
+          .join(", ")}</a></li>`
+    )
+    .join("");
+
+  const html = `
+      <h1>${nasaResult.title}</h1>
+      <img src="${nasaResult.url}" alt="${nasaResult.title}" style="max-width: 100%; height: auto;" />
+      <p>${nasaResult.explanation}</p>
+      <h2>Spotify Tracks</h2>
+      <ul>${tracks}</ul>
+  `;
+
+  console.log("Generated HTML response.");
+  res.writeHead(200, { "Content-Type": "text/html" });
+  res.end(html);
+}
+
+server.listen(port, () => console.log(`Server running at http://localhost:${port}`));
