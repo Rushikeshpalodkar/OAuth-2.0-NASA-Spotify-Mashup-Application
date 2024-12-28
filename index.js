@@ -14,13 +14,13 @@ server.on("request", handle_request);
 function handle_request(req, res) {
   console.log(`New request for ${req.url}`);
   if (req.url === "/") {
-    console.log("Serving the home page.");
+    
     const homePage = fs.createReadStream("html/main.html");
     res.writeHead(200, { "Content-Type": "text/html" });
     homePage.pipe(res);
 }
 else if (req.url.startsWith("/authorize")) {
-    console.log("Redirecting user to Spotify OAuth login page...");
+   
     const spotifyAuthUrl =
         `https://accounts.spotify.com/authorize?` +
         querystring.stringify({
@@ -35,10 +35,9 @@ else if (req.url.startsWith("/authorize")) {
   } else if (req.url.startsWith("/callback")) {
     handle_spotify_callback(req, res);
   } else if (req.url.startsWith("/search")) {
-    console.log("Handling NASA search...");
     handle_search(req, res);
   } else {
-    console.log("404 Not Found for URL:", req.url);
+   
     res.writeHead(404, { "Content-Type": "text/plain" });
     res.end("404 Not Found");
   }
@@ -85,7 +84,7 @@ function handle_spotify_callback(req, res) {
             fs.writeFileSync("./auth/user-token.json", JSON.stringify(tokenData));
             console.log("Spotify token cached successfully.");
 
-            res.writeHead(302, { Location: "/" }); // Example flow search?date=2024-12-18
+            res.writeHead(302, { Location: "/" }); 
             res.end();
         });
     });
@@ -108,7 +107,7 @@ function handle_search(req, res) {
         return;
     }
 
-    console.log(`Handling NASA search for date: ${date}`);
+ 
 
     fetch_nasa_data(date, res, (nasaResult) => {
         if (!nasaResult) {

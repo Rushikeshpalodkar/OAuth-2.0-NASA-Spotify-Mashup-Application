@@ -1,15 +1,78 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>NASA Playlist Generator</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    body {
+      background: linear-gradient(to right, #1c1c1c, #3b3b3b);
+      color: #fff;
+      font-family: 'Arial', sans-serif;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      margin: 0;
+    }
+
+    .form-container {
+      background: rgba(255, 255, 255, 0.1);
+      padding: 2rem;
+      border-radius: 8px;
+      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+      max-width: 400px;
+      width: 100%;
+    }
+
+    .form-container h1 {
+      font-size: 1.8rem;
+      margin-bottom: 1.5rem;
+      text-align: center;
+    }
+
+    .form-container label {
+      margin-bottom: 0.5rem;
+    }
+
+    .form-container input[type="date"] {
+      margin-bottom: 1.5rem;
+    }
+
+    .btn {
+      width: 100%;
+    }
+
+    footer {
+      margin-top: 1rem;
+      text-align: center;
+      font-size: 0.9rem;
+    }
+
+    footer a {
+      color: #ffc107;
+      text-decoration: none;
+    }
+
+    footer a:hover {
+      text-decoration: underline;
+    }
+  </style>
 </head>
 <body>
-  <h1>Create Your NASA-Themed Spotify Playlist</h1>
-  <form action="/search" method="get">
-    <label for="date">Select a Date for NASA's APOD:</label><br>
-    <input type="date" id="date" name="date" required>
-    <br>
-    <button type="submit">Generate Playlist</button>
-  </form>
+  <div class="form-container">
+    <h1>NASA Playlist Generator</h1>
+    <form action="/search" method="get">
+      <div class="mb-3">
+        <label for="date" class="form-label">Select a Date for NASA's APOD:</label>
+        <input type="date" id="date" name="date" class="form-control" required>
+      </div>
+      <button type="submit" class="btn btn-warning">Generate Playlist</button>
+    </form>
+    <footer>
+      <p>Powered by <a href="https://api.nasa.gov/" target="_blank">NASA APOD</a> and <a href="https://www.spotify.com/" target="_blank">Spotify</a></p>
+    </footer>
+  </div>
 </body>
 </html>
